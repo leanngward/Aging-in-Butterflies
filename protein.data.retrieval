@@ -1,0 +1,155 @@
+import Bio
+import re
+from Bio import SeqIO
+from Bio import Entrez
+from Bio.Seq import Seq
+
+#LeAnn Ward
+#Version 1 - 12/14/2020
+
+#For a given protein ID, assuming it comes from a genome so that it would have an associated transcript and gene, 
+#this program can collect the following information: protein ID, transcript ID, protein name,  
+#gene id, location, length of the protein AA,  species name, GI number, protein sequence, and coding sequence.  
+
+proteinids = []
+filename = input("Enter File Name for Protein ID list: ")               #ENTER A LIST OF PROTEIN ID'S SEPARATED BY NEWLINE CHARACTERS
+file =open(filename, 'r')
+out = open("outputfile.txt", 'w')
+print("Writing output file...")
+out.write("PROTEIN ID\tTRANSCRIPT ID\tPROTEIN NAME\tGENEID\tLOCATION\tAA LENGTH\tSPECIES NAME\tGI NUMBER\tPROTEIN SEQUENCE\tCODING SEQUENCE\n")
+
+for items in file.readlines(): #This loop takes off the new line characters in the given file and appends protein IDs to a list
+    items = items[0:]
+    proteinids.append(items)
+    
+    
+for id in proteinids: #This loop retrives the information for each of the protein IDs
+
+    Entrez.email = "leann.g.ward@gmail.com"
+    out.write("\n")
+    
+        
+    #PROTEIN ID
+    out.write(id)
+    out.write("\t")
+    
+    #TRANSCRIPT ID
+    handle = Entrez.efetch(db="protein", id = id, rettype="fasta_cds_na", retmode="text")
+    cds = ''
+    for line in handle.readlines():
+        cds += line
+    XM = re.search("XM", cds).start()
+    out.write(cds[XM:XM+14])
+    out.write("\t")
+    
+    #PROTEIN NAME
+    fasta=""
+    handle = Entrez.efetch(db="sequences",id=id,rettype="fasta",retmode="text")
+    for lines in handle.readlines(): 
+        fasta+=lines
+    idlocation = re.search("XP_033882936", fasta).end()
+    bracket1location = re.search("\[", fasta).start(0)
+    out.write(fasta[idlocation+3:bracket1location])
+    out.write("\t")
+
+    #GENE ID
+    genehandle = Entrez.efetch(db = "protein", id=id,rettype="fasta_cds_aa", retmode="text") #this returns the gene and the location
+    lines = genehandle.readline().strip()
+    geneposition = re.search("GeneID:", lines).end()
+    for i in range(geneposition, len(lines)):
+        if (lines[i] == "]"):
+            endposition = i;
+            break;
+
+    out.write(lines[geneposition:endposition])
+    out.write("\t")
+    
+    #LOCATION
+    transcriptdata = Entrez.efetch(db="popset", id=id, rettype="gb", retmode="text")
+    records = SeqIO.parse(transcriptdata, "genbank")
+    for record in records:
+        for seq_feature in record.features:
+            if seq_feature.type == "source":
+                out.write(seq_feature.qualifiers['chromosome'][0])
+    out.write("\t")
+
+    #AMINO ACID LENGTH
+    lengthlist = []
+    lengthstring = ""
+    lengthhandle = Entrez.efetch(db="protein", id=id, rettype="gp", retmode="text") #this has protein aa length in it
+    length = lengthhandle.readline().strip()
+    locusposition = re.search(" aa", length).start() #finds the first position after the end of the protein length
+    for i in range(locusposition-1, 0, -1): #decrements from locusposition back to the beggining of the length  number
+        if length[i] == " ":
+            break #ends the loop once the number is over
+        else:
+            lengthstring += length[i] #adds the protein length in reverse
+    proteinlength = lengthstring[::-1] #flips the protein length so that it is correct
+    #print("Protein Length:", proteinlength)
+    out.write(proteinlength)
+    out.write("\t")
+
+    #ADD THIS TO A SEPARATE FASTA FILE AND DON'T WRITE TO OUT
+        
+
+
+    #SPECIES NAME
+    fasta = ""
+    speciesname = ""
+    handle = Entrez.efetch(db="sequences",id=id,rettype="fasta",retmode="text")
+    for lines in handle.readlines(): 
+        fasta+=lines
+    openbracket = re.search("\[", fasta).start()
+    closebracket = re.search("\]", fasta).start()
+    for i in range(openbracket, closebracket):
+        speciesname += fasta[i]
+    out.write(speciesname[1:])
+    out.write("\t")
+    
+
+    #GI NUMBER
+    seqid = ""
+    gifetch = Entrez.efetch(db = "sequences", id=id, rettype="seqid", retmode="text")
+    for lines in gifetch.readlines():
+        seqid += lines
+    gititle = re.search("gi", seqid).start()
+    #print(seqid[gititle:])
+    ginumber = seqid[(gititle+3):]
+    out.write(ginumber.strip())
+    out.write("\t")
+    
+    #PROTEIN SEQUENCE
+    fasta=""
+    handle = Entrez.efetch(db="sequences",id=id,rettype="fasta",retmode="text")
+    for lines in handle.readlines(): 
+        fasta+=lines
+    bracket = re.search("]", fasta).end()
+    fasta = fasta.replace('\n','')
+    out.write(fasta[bracket:])
+    out.write("\t")
+    
+    
+    #CODING SEQUENCE
+    handle = Entrez.efetch(db="protein", id =id, rettype="fasta_cds_na", retmode="text")
+    cds = ''
+    for  line in handle.readlines():
+        cds += line
+
+    lastbrack = re.search("gbkey", cds).end()
+    for i in range(lastbrack, len(cds)):
+        if cds[i] == "]":
+            lastbrack = i
+    codingsequence = cds[lastbrack+1:]
+    codingsequence = codingsequence.replace('\n', '')
+    out.write(codingsequence)
+    out.write('\n')
+  
+    
+
+
+handle.close()
+out.close()
+transcriptdata.close()
+genehandle.close()
+file.close()
+
