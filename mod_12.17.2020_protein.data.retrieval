@@ -1,0 +1,225 @@
+import Bio
+import re
+from Bio import SeqIO
+from Bio import Entrez
+from Bio.Seq import Seq
+
+#LeAnn Ward
+#for a given protein ID, assuming it comes from a genome so that it would have an associated transcript and gene, 
+#program can collect the following information: protein ID, protein sequence, transcript ID, 
+#length of the protein AA, gene ID, species name, and coding sequence
+#NCBI numerical taxon ID, location, strand, start, end, number of exons, assembly    
+
+proteinids = []
+while True:
+    try:
+        filename = input("Enter File Name for Protein ID list: ") #ENTER A LIST OF PROTEIN ID'S SEPARATED BY NEWLINE CHARACTERS   
+        file = open(filename, 'r')
+        break
+    except:
+        print("Cannot open given file name.")
+
+out = open("outputfile.txt", 'w')
+print("Creating output file...")
+out.write("PROTEIN ID\tTRANSCRIPT ID\tPROTEIN NAME\tGENEID\tLOCATION\tAA LENGTH\tSPECIES NAME\tGI NUMBER\tPROTEIN SEQUENCE\tCODING SEQUENCE\n")
+
+fastafile = open("proteinsequences.fasta", "w")
+
+for items in file.readlines(): #This loop takes off the new line character and appends proteins to a list
+    items = items[0:]
+    proteinids.append(items)
+    
+    
+for id in proteinids: 
+    print("Writing output for ", id, "...") 
+    Entrez.email = "leann.g.ward@gmail.com"
+    out.write("\n")
+    
+        
+    #PROTEIN ID
+    out.write(id)
+    out.write("\t")
+    
+    #TRANSCRIPT ID
+    handle = Entrez.efetch(db="protein", id = id, rettype="fasta_cds_na", retmode="text")
+    cds = ''
+    for line in handle.readlines():
+        cds += line
+    XM = re.search("XM", cds).start()
+    out.write(cds[XM:XM+14])
+    out.write("\t")
+    
+    #PROTEIN NAME
+    fasta=""
+    handle = Entrez.efetch(db="sequences",id=id,rettype="fasta",retmode="text")
+    for lines in handle.readlines(): 
+        fasta+=lines
+    idlocation = re.search("XP_033882936", fasta).end()
+    bracket1location = re.search("\[", fasta).start(0)
+    out.write(fasta[idlocation+3:bracket1location])
+    out.write("\t")
+    
+    fastafile.write(">")
+    fastafile.write(fasta[idlocation+3:bracket1location])
+    fastafile.write("\n")
+
+    #GENE ID
+    genehandle = Entrez.efetch(db = "protein", id=id,rettype="fasta_cds_aa", retmode="text") #this returns the gene and the location
+    lines = genehandle.readline().strip()
+    geneposition = re.search("GeneID:", lines).end()
+    for i in range(geneposition, len(lines)):
+        if (lines[i] == "]"):
+            endposition = i;
+            break;
+
+    out.write(lines[geneposition:endposition])
+    out.write("\t")
+    
+    #LOCATION
+    transcriptdata = Entrez.efetch(db="popset", id=id, rettype="gb", retmode="text")
+    records = SeqIO.parse(transcriptdata, "genbank")
+    for record in records:
+        for seq_feature in record.features:
+            if seq_feature.type == "source":
+                out.write(seq_feature.qualifiers['chromosome'][0])
+    out.write("\t")
+
+    #AMINO ACID LENGTH
+    lengthlist = []
+    lengthstring = ""
+    lengthhandle = Entrez.efetch(db="protein", id=id, rettype="gp", retmode="text") #this has protein aa length in it
+    length = lengthhandle.readline().strip()
+    locusposition = re.search(" aa", length).start() #finds the first position after the end of the protein length
+    for i in range(locusposition-1, 0, -1): #decrements from locusposition back to the beggining of the length  number
+        if length[i] == " ":
+            break #ends the loop once the number is over
+        else:
+            lengthstring += length[i] #adds the protein length in reverse
+    proteinlength = lengthstring[::-1] #flips the protein length so that it is correct
+    #print("Protein Length:", proteinlength)
+    out.write(proteinlength)
+    out.write("\t")
+
+    #SPECIES NAME
+    fasta = ""
+    speciesname = ""
+    handle = Entrez.efetch(db="sequences",id=id,rettype="fasta",retmode="text")
+    for lines in handle.readlines(): 
+        fasta+=lines
+    openbracket = re.search("\[", fasta).start()
+    closebracket = re.search("\]", fasta).start()
+    for i in range(openbracket, closebracket):
+        speciesname += fasta[i]
+    out.write(speciesname[1:])
+    out.write("\t")
+    
+
+    #GI NUMBER
+    seqid = ""
+    gifetch = Entrez.efetch(db = "sequences", id=id, rettype="seqid", retmode="text")
+    for lines in gifetch.readlines():
+        seqid += lines
+    gititle = re.search("gi", seqid).start()
+    #print(seqid[gititle:])
+    ginumber = seqid[(gititle+3):]
+    out.write(ginumber.strip())
+    out.write("\t")
+    
+    #PROTEIN SEQUENCE
+    fasta=""
+    handle = Entrez.efetch(db="sequences",id=id,rettype="fasta",retmode="text")
+    for lines in handle.readlines(): 
+        fasta+=lines
+    bracket = re.search("]", fasta).end()
+    fasta = fasta.replace('\n','')
+    out.write(fasta[bracket:])
+    out.write("\t")
+    
+
+    
+    
+    #CODING SEQUENCE
+    handle = Entrez.efetch(db="protein", id =id, rettype="fasta_cds_na", retmode="text")
+    cds = ''
+    for  line in handle.readlines():
+        cds += line
+
+    lastbrack = re.search("gbkey", cds).end()
+    for i in range(lastbrack, len(cds)):
+        if cds[i] == "]":
+            lastbrack = i
+    codingsequence = cds[lastbrack+1:]
+    codingsequence = codingsequence.replace('\n', '')
+    out.write(codingsequence)
+    out.write('\n')
+    
+    #WRITES CODING SEQUENCE TO A FASTA FILE
+    fastafile.write(codingsequence)
+    fastafile.write("\n")
+
+fastafile.close()   
+
+#TRANLATE SEQUENCE -- Federico Hoffmann
+   
+# initialize lists for curated sequences and records in the different phases and pseudogenes
+curated_seqs = []
+phase0 = []
+phase1 = []
+phase2 = []
+pseudgenes_ids = []
+pseudogenes = []
+
+# create initial n and open sequence file
+start_n = Seq('n') #Seq('n', generic_dna) --- LW removed alphabet type
+seqs = open("proteinsequences.fasta","r") #seqs = open("sequence.fasta","rU") -- LW adding U is deprecated and is now default behavior. 
+
+for record in SeqIO.parse(seqs, "fasta"):
+    #record.seq.alphabet = generic_dna --- LW removed alphabet type
+    nstops = record.seq.translate().count("*")
+    if nstops == 0:
+        print(record.id + ' appears to be a functional sequence')
+        curated_seqs.append(record)
+        phase0.append(record.id)
+    elif nstops == 1 and record.seq.translate()[-1] == '*':
+        print(record.id + ' appears to be a functional sequence with a terminal stop codon')
+        curated_seqs.append(record)
+        phase0.append(record.id)
+    elif nstops > 0:
+        nstops = (start_n + record.seq).translate().count("*")
+        if nstops == 0:
+            print(record.id + ' appears to be a functional sequence in phase 1. I will add an n as the first nucleotide')
+            curated_seqs.append(start_n + record)
+            phase1.append(record.id)
+        elif nstops > 0:
+            nstops = (start_n+ start_n + record.seq).translate().count("*")
+            if nstops == 0:
+                print(record.id + ' appears to be a functional sequence in phase 2. I will add two n as the first nucleotides')
+                curated_seqs.append(start_n + start_n + record)
+                phase2.append(record.id)
+            else:
+                print(record.id + ' appears to be a pseudogene and it will be excluded from further analyses')
+                pseudogenes.append(record)
+                pseudgenes_ids.append(record.id)
+                
+curated_seqs_file = open("Derdeyn_curated.fasta", "w")
+SeqIO.write(curated_seqs, curated_seqs_file, "fasta")
+curated_seqs_file.close()                
+
+pseudogenes_file = open("Derdeyn_curated.pseudogenes.fasta", "w")
+SeqIO.write(pseudogenes, pseudogenes_file, "fasta")
+pseudogenes_file.close()   
+
+
+table_file = open("table_phase.csv","w")
+table_file.write('phase0,phase1,phase2,pseudogenes')
+table_file.close()
+  
+    
+
+
+handle.close()
+out.close()
+transcriptdata.close()
+genehandle.close()
+file.close()
+fastafile.close()
